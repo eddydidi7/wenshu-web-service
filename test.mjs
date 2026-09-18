@@ -47,3 +47,18 @@ test('upstream outages are distinguished from nonexistent articles',async t=>{
  const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},async()=>{throw Error('private diagnostic');});
  const r=await fetch(base+'/p/'+slug);assert.equal(r.status,502);assert(!(await r.text()).includes('private diagnostic'));
 });
+
+test('test alias renders real public content and canonical metadata',async t=>{
+ const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co',TEST_ARTICLE_SLUG:slug,RENDER_EXTERNAL_URL:'https://wenshu.onrender.com',DOWNLOAD_URL:'https://downloads.example/app.apk'},async()=>Response.json({post:{id:'real-post',title:'测试公开文章',body:'真实正文',author_name:'学友',created_at:'2026-09-19T00:00:00Z',access_level:'public',image_urls:['https://images.example/a.jpg']}}));
+ const r=await fetch(base+'/p/test-article');const h=await r.text();assert.equal(r.status,200);
+ for(const value of ['测试公开文章','真实正文','学友','2026/09/19 08:00','https://images.example/a.jpg','og:image','og:description','og:locale','article:published_time','打开文殊计数器','下载 App','https://downloads.example/app.apk',`https://wenshu.onrender.com/p/${slug}`])assert(h.includes(value),value);
+});
+test('predictable test alias refuses link-only and private content',async t=>{
+ for(const access_level of ['link_only','private']){
+  const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co',TEST_ARTICLE_SLUG:slug},async()=>Response.json({post:{access_level,body:'hidden'}}));
+  const r=await fetch(base+'/p/test-article');assert.equal(r.status,404);assert(!(await r.text()).includes('hidden'));
+ }
+});
+test('missing download address shows disabled button, not a fabricated link',()=>{
+ const h=render({post:{id:'p',title:'测试',body:'正文'}},slug,'https://example.test','');assert(h.includes('disabled'));assert(h.includes('下载 App（暂未开放）'));
+});

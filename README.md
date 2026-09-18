@@ -57,3 +57,15 @@ node --env-file=.env.example server.mjs
 免费服务会休眠，首次重新访问可能需要等待；部署成功不等于已完成各地区网络和真机验收。
 
 官方文档：https://render.com/docs/web-services 、https://render.com/docs/environment-variables 、https://render.com/docs/free
+
+## 测试公开文章与正式链接（2026-09-19）
+
+`/p/test-article` 是已有公开文章的测试别名，不新建或复制用户文章。默认绑定此前验证的公开分享标识，可用 TEST_ARTICLE_SLUG 指定另一篇公开文章。每次请求仍检查接口和 public 可见性；变为 link_only/private、撤销或下架后测试别名不可读。
+
+页面输出标题、正文、图片、作者、北京时间，并输出 Open Graph 标题/摘要/封面/网址/站点名/发布时间。实际社交软件是否显示卡片由其抓取和缓存策略决定。App 打开使用 huideng://，未安装不能保证自动跳转应用商店；下载按钮需要真实 DOWNLOAD_URL，未设置时禁用且明确标注。
+
+正式 slug 在 Supabase shared_pages 插入记录时生成：两个随机 UUID 去掉连字符，得到64位十六进制标识；forum_action_v3 发布内容时自动创建分享记录。分享链接为 PUBLIC_BASE_URL（或 Render 自动网址）+/p/+slug。不是文章标题，也不是 auth.uid()，无需逐篇配置路由。撤销分享后再次分享会生成新标识。
+
+所有红书文章接入：在 Supabase community_config 的唯一记录中，将 public_base_url 填为当前 Render HTTPS 根网址，不含 /p/。客户端现有分享代码已读取这个值。只有包含该功能的客户端可使用；设置网址不替代首次客户端升级。
+
+当前上传更新至少包含 server.mjs；test.mjs 和本 README 也应同步。仓库更新后确认 Render 已部署新提交，再访问 /p/test-article。
