@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: wenshu-web-service
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm test
+    startCommand: npm start
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: SUPABASE_URL
+        value: https://duakhsuncmbabxomynkr.supabase.co
