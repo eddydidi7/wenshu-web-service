@@ -69,3 +69,15 @@ node --env-file=.env.example server.mjs
 所有红书文章接入：在 Supabase community_config 的唯一记录中，将 public_base_url 填为当前 Render HTTPS 根网址，不含 /p/。客户端现有分享代码已读取这个值。只有包含该功能的客户端可使用；设置网址不替代首次客户端升级。
 
 当前上传更新至少包含 server.mjs；test.mjs 和本 README 也应同步。仓库更新后确认 Render 已部署新提交，再访问 /p/test-article。
+
+## 网页上传 APK（2026-09-20）
+
+- 上传入口 `/upload`；使用现有文殊 App 的邮箱、密码登录同一 Supabase Auth 账号。
+- 新增必填环境变量 `SUPABASE_ANON_KEY`：只能使用 anon 或 publishable 公开 key，不能使用 service_role 或 secret key。页面不会返回此 key。
+- 登录/刷新/公共资料操作通过同源小型 JSON 代理；APK 按 6 MiB 分块直接上传 Supabase Storage `/upload/resumable/sign`，服务器仍校验权限、配额、SHA-256 后发布。
+- 登录凭证仅保存在网页内存；本地存储只保留按用户和文件校验值隔离的上传任务、续传地址和说明。重新打开网页需重新登录并选择同一文件。
+- 发布完成生成 `/f/<随机64位标识>`；朋友无需登录即可下载已发布公共文件。管理员关闭下载/下架仍会生效。
+- 不修改数据库、不创建第二套账号、不重编译 APK。
+- 部署时将新增的 `upload-server.mjs`、`upload.html`、`upload.js`、`upload-core.js`、全部 `noble-*.js`、`NOBLE-LICENSE.txt` 与更新后的 `server.mjs`、`test.mjs` 一起上传至仓库根目录。
+- SHA-256 使用 npm 官方 @noble/hashes 1.8.0 MIT 源码，浏览器模块导入路径改为本地文件。没有运行时第三方 CDN。
+- 浏览器暂不永久保存 APK 文件本体。移动端请保持页面在前台，后台系统可能暂停上传。

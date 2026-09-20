@@ -3,6 +3,9 @@ test('untrusted content is escaped and dangerous URLs discarded',()=>{const h=re
 test('Quill content uses an allowlist',()=>{assert.equal(safeUrl('file:///secret'),'');const s=richText([{insert:'safe',attributes:{bold:true,link:'javascript:evil'}},{insert:{image:'https://example.test/a.png'}}],'');assert(s.includes('<strong>safe</strong>'));assert(!s.includes('javascript:'));});
 
 import http from 'node:http';
+import {publicKey} from './upload-server.mjs';
+import {fileHash,endpointFor,locationFor,tusUpload,CHUNK} from './upload-core.js';
+import {createHash} from 'node:crypto';
 import {handler} from './server.mjs';
 const slug='a'.repeat(64);
 async function serve(t,env,fetcher){
@@ -84,4 +87,41 @@ test('withdrawn files and unsafe redirects never produce downloads',async t=>{
  const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},async url=>url.includes('download=1')?Response.json({url:'https://evil.example/file.apk'}):new Response('',{status:404}));
  assert.equal((await fetch(`${base}/f/${slug}`)).status,404);
  assert.equal((await fetch(`${base}/f/${slug}/download`,{method:'POST',redirect:'manual'})).status,502);
+});
+
+test('upload rejects privileged keys, authenticates proxies, limits metadata and rejects foreign origins',async t=>{
+ assert.equal(publicKey('sb_secret_bad'),'');assert.equal(publicKey('x.'+Buffer.from(JSON.stringify({role:'service_role'})).toString('base64url')+'.x'),'');
+ let calls=0;const env={SUPABASE_URL:'https://project.supabase.co',SUPABASE_ANON_KEY:'sb_publishable_test',PUBLIC_BASE_URL:'https://site.test'};
+ const base=await serve(t,env,async(url,options)=>{calls++;assert.equal(url,'https://project.supabase.co/functions/v1/public-resources');assert.equal(options.headers.Authorization,'Bearer user.jwt');assert.equal(options.headers.apikey,'sb_publishable_test');return Response.json({api_version:1,files:[]});});
+ const request=(body,extra={})=>fetch(base+'/api/upload/resource',{method:'POST',headers:{'Content-Type':'application/json',...extra},body:JSON.stringify(body)});
+ assert.equal((await request({action:'list'})).status,401);
+ assert.equal((await request({action:'delete'})).status,400);
+ assert.equal((await request({action:'list'},{Origin:'https://evil.test'})).status,403);
+ assert.equal((await request({action:'list',extra:'x'.repeat(20000)})).status,413);
+ assert.equal((await request({action:'list'},{Authorization:'Bearer user.jwt'})).status,200);assert.equal(calls,1);
+ const page=await fetch(base+'/upload');assert.equal(page.status,200);assert((await page.text()).includes('文殊账号邮箱'));assert(page.headers.get('Content-Security-Policy').includes("script-src 'self'"));
+ for(const file of ['upload.js','upload-core.js','noble-sha2.js','noble-_md.js','noble-_u64.js','noble-utils.js','noble-crypto.js'])assert.equal((await fetch(base+'/'+file)).status,200);
+ const cfg=await(await fetch(base+'/api/upload/config')).json();assert.deepEqual(cfg,{ready:true,storageOrigin:'https://project.supabase.co'});assert(!JSON.stringify(cfg).includes('publishable'));
+});
+test('incremental hash matches native SHA256 across chunk boundaries',async()=>{
+ const bytes=Buffer.alloc(CHUNK+100,37),file=new Blob([bytes]);assert.equal(await fileHash(file),createHash('sha256').update(bytes).digest('hex'));
+});
+test('signed TUS endpoint and location reject credential exfiltration',()=>{
+ const plan={url:'https://project.supabase.co/storage/v1/upload/resumable',bucket:'public-resources',chunk_size:CHUNK,token:'token'};
+ const endpoint=endpointFor(plan,'https://project.supabase.co');assert(endpoint.pathname.endsWith('/sign'));
+ assert.throws(()=>endpointFor({...plan,url:'https://evil.test/storage/v1/upload/resumable'},'https://project.supabase.co'));
+ assert.throws(()=>locationFor('https://evil.test/path',endpoint));assert.throws(()=>locationFor(endpoint+'/id?token=bad',endpoint));
+});
+test('TUS resumes by HEAD and never resends acknowledged bytes',async()=>{
+ const plan={url:'https://project.supabase.co/storage/v1/upload/resumable',bucket:'public-resources',chunk_size:CHUNK,token:'signed',object_name:'resources/u/file.apk',content_type:'application/vnd.android.package-archive'};
+ const task={location:'https://project.supabase.co/storage/v1/upload/resumable/sign/id'},calls=[];let sent=0;
+ await tusUpload(new Blob([Buffer.alloc(CHUNK+20)]),plan,'https://project.supabase.co',task,()=>{},p=>sent=p,async(url,options)=>{calls.push(options.method);assert.equal(options.headers['x-signature'],'signed');if(options.method==='HEAD')return new Response(null,{status:200,headers:{'Upload-Offset':String(CHUNK)}});assert.equal(options.headers['Upload-Offset'],String(CHUNK));assert.equal(options.body.size,20);return new Response(null,{status:204,headers:{'Upload-Offset':String(CHUNK+20)}});});
+ assert.deepEqual(calls,['HEAD','PATCH']);assert.equal(sent,1);
+});
+test('TUS creation keeps APK MIME, filename metadata and saved location',async()=>{
+ const plan={url:'https://project.supabase.co/storage/v1/upload/resumable',bucket:'public-resources',chunk_size:CHUNK,token:'signed',object_name:'resources/u/文殊.apk',content_type:'application/vnd.android.package-archive'};let saved=false;const task={};
+ await tusUpload(new Blob(['abc']),plan,'https://project.supabase.co',task,()=>{saved=true;},()=>{},async(url,options)=>{
+ if(options.method==='POST'){const meta=Object.fromEntries(options.headers['Upload-Metadata'].split(',').map(v=>{const[k,b]=v.split(' ');return[k,Buffer.from(b,'base64').toString('utf8')];}));assert.equal(meta.objectName,plan.object_name);assert.equal(meta.contentType,plan.content_type);return new Response(null,{status:201,headers:{Location:url+'/id'}});}
+ return new Response(null,{status:204,headers:{'Upload-Offset':'3'}});
+ });assert(saved);assert(task.location.endsWith('/sign/id'));
 });

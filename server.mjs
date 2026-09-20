@@ -6,6 +6,7 @@ export function getPostDisplayTitle(p) {
 }
 import {readFile} from 'node:fs/promises';
 import http from 'node:http';
+import {uploadRoutes} from './upload-server.mjs';
 import {pathToFileURL} from 'node:url';
 export const escape=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 export const safeUrl=u=>{try{const x=new URL(u);return x.protocol==='https:'?x.href:'';}catch{return '';}};
@@ -39,6 +40,7 @@ export function handler(env=process.env,fetcher=fetch){return async(req,res)=>{
  res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Content-Type-Options','nosniff');
  res.setHeader('Content-Security-Policy',"default-src 'none'; img-src https: data:; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
  const path=(req.url??'').split('?')[0];
+ if(await uploadRoutes(req,res,env,fetcher))return;
  const reply=(status,text)=>{res.writeHead(status,{'Content-Type':'text/plain; charset=utf-8'});res.end(text);};
  const resourceMatch=/^\/f\/([a-f0-9]{64})(\/download)?$/.exec(path);
  if(resourceMatch){
