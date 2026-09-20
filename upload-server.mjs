@@ -10,7 +10,8 @@ export async function uploadRoutes(req,res,env,fetcher) {
  if(path!=='/upload'&&!assets.has(path.slice(1))&&!path.startsWith('/api/upload/'))return false;
  const json=(status,data)=>{res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify(data));};
  let origin='';try{const u=new URL(env.SUPABASE_URL);if(u.protocol==='https:')origin=u.origin;}catch{}
- res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'self'; connect-src 'self' ${origin}; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
+ let storageOrigin=origin;if(origin){const storage=new URL(origin);if(/^[a-z0-9-]+\.supabase\.co$/.test(storage.hostname)){storage.hostname=storage.hostname.replace('.supabase.co','.storage.supabase.co');storageOrigin=storage.origin;}}
+ res.setHeader('Content-Security-Policy',`default-src 'none'; script-src 'self'; connect-src 'self' ${origin} ${storageOrigin}; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`);
  if(path==='/api/upload/config'&&req.method==='GET') {json(200,{ready:!!origin&&!!publicKey(env.SUPABASE_ANON_KEY),storageOrigin:origin});return true;}
  if(!path.startsWith('/api/')) {
   if(!['GET','HEAD'].includes(req.method)){json(405,{error:'METHOD_NOT_ALLOWED'});return true;}

@@ -125,3 +125,11 @@ test('TUS creation keeps APK MIME, filename metadata and saved location',async()
  return new Response(null,{status:204,headers:{'Upload-Offset':'3'}});
  });assert(saved);assert(task.location.endsWith('/sign/id'));
 });
+
+test('direct Storage host is allowed only for the configured project, including CSP',async t=>{
+ const plan={url:'https://project.storage.supabase.co/storage/v1/upload/resumable',bucket:'public-resources',chunk_size:CHUNK,token:'signed'};
+ assert.equal(endpointFor(plan,'https://project.supabase.co').origin,'https://project.storage.supabase.co');
+ assert.throws(()=>endpointFor({...plan,url:'https://other.storage.supabase.co/storage/v1/upload/resumable'},'https://project.supabase.co'));
+ const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},()=>{throw Error('unexpected');});
+ const page=await fetch(base+'/upload');assert(page.headers.get('Content-Security-Policy').includes('https://project.storage.supabase.co'));
+});

@@ -6,8 +6,10 @@ export async function fileHash(file,progress=()=>{}) {
 }
 export function endpointFor(plan,origin){
  const u=new URL(plan.url);
+ const allowed=new Set([origin]);const storage=new URL(origin);
+ if(/^[a-z0-9-]+\.supabase\.co$/.test(storage.hostname)){storage.hostname=storage.hostname.replace('.supabase.co','.storage.supabase.co');allowed.add(storage.origin);}
  if(u.pathname==='/storage/v1/upload/resumable')u.pathname+='/sign';
- if(u.origin!==origin||u.protocol!=='https:'||u.username||u.password||u.search||u.hash||u.pathname!=='/storage/v1/upload/resumable/sign'||plan.bucket!=='public-resources'||plan.chunk_size!==CHUNK||!plan.token)throw Error('INVALID_TRANSFER');
+ if(!allowed.has(u.origin)||u.protocol!=='https:'||u.username||u.password||u.search||u.hash||u.pathname!=='/storage/v1/upload/resumable/sign'||plan.bucket!=='public-resources'||plan.chunk_size!==CHUNK||!plan.token)throw Error('INVALID_TRANSFER');
  return u;
 }
 export function locationFor(raw,endpoint){const u=new URL(raw,endpoint);if(u.origin!==endpoint.origin||u.username||u.password||u.search||u.hash||!u.pathname.startsWith(endpoint.pathname+'/'))throw Error('INVALID_TRANSFER');return u.href;}
