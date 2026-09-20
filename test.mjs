@@ -62,3 +62,26 @@ test('predictable test alias refuses link-only and private content',async t=>{
 test('missing download address shows disabled button, not a fabricated link',()=>{
  const h=render({post:{id:'p',title:'测试',body:'正文'}},slug,'https://example.test','');assert(h.includes('disabled'));assert(h.includes('下载 App（暂未开放）'));
 });
+
+ test('untitled article preview uses original text; image-only has no heading',()=>{
+ const html=render({post:{id:'x',title:'',body:' 原文第一段\n 第二段',image_urls:[]}},'a'.repeat(64),'https://example.test','');
+ assert(html.includes('<h1>原文第一段 第二段</h1>'));assert(html.includes('property="og:title" content="原文第一段 第二段"'));
+ const picture=render({post:{id:'x',title:'',body:'',image_urls:['https://example.test/a.png']}},'a'.repeat(64),'https://example.test','');assert(!picture.includes('<h1>'));assert(!picture.includes('图片分享'));
+ const literal=render({post:{id:'x',title:'文字分享',body:'原文'}},'a'.repeat(64),'https://example.test','');assert(literal.includes('<h1>文字分享</h1>'));
+ });
+
+test('public file page shows APK metadata without signing a download',async t=>{
+ const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},async url=>{assert(!url.includes('download=1'));return Response.json({file:{file_name:'计数器.apk',file_size:314572800,author_name:'学友',created_at:'2026-09-20T00:00:00Z',checksum:'a'.repeat(64)}});});
+ const r=await fetch(`${base}/f/${slug}`);const h=await r.text();assert.equal(r.status,200);for(const text of ['300.0 MB','Android安装包','下载 APK','method="post"','SHA-256','og:title'])assert(h.includes(text));
+ const probe=await fetch(`${base}/f/${slug}/download`);assert.equal(probe.status,405);
+});
+test('download POST redirects only to the configured private bucket signed URL',async t=>{
+ const signed='https://project.supabase.co/storage/v1/object/sign/public-resources/file.apk?token=test';
+ const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},async url=>{assert(url.includes('download=1'));return Response.json({url:signed});});
+ const r=await fetch(`${base}/f/${slug}/download`,{method:'POST',redirect:'manual'});assert.equal(r.status,303);assert.equal(r.headers.get('location'),signed);
+});
+test('withdrawn files and unsafe redirects never produce downloads',async t=>{
+ const base=await serve(t,{SUPABASE_URL:'https://project.supabase.co'},async url=>url.includes('download=1')?Response.json({url:'https://evil.example/file.apk'}):new Response('',{status:404}));
+ assert.equal((await fetch(`${base}/f/${slug}`)).status,404);
+ assert.equal((await fetch(`${base}/f/${slug}/download`,{method:'POST',redirect:'manual'})).status,502);
+});
